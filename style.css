@@ -1,0 +1,725 @@
+/* World Engine 世界引擎 - 面板样式
+ *
+ * 配色策略：不依赖酒馆主题变量（不同主题会撞成白底白字），
+ * 由 JS 检测明暗后给 #we-panel 加 .we-light / .we-dark，用自有变量保证对比度。
+ */
+
+#we-ball {
+  position: fixed;
+  /* 兜底值必须写在前、且不带 max()/env()：老浏览器不认新语法时会把整条声明丢掉，
+     球就没有任何偏移、落到文档末尾去了（= "看不到悬浮球"） */
+  right: 12px;
+  bottom: 120px;
+  width: 50px;
+  height: 50px;
+  border-radius: 50%;
+  /* 手机上好点：约 13mm，手指能戳中 */
+  z-index: 100003;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: none;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 1px;
+  color: #ffffff;
+  background: linear-gradient(135deg, #4f6ef7, #8b5bff);
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+  transition: transform .15s ease, opacity .15s ease;
+}
+/* 支持新语法的浏览器再覆盖成避让刘海屏/手势条的版本 */
+@supports (bottom: max(1px, env(safe-area-inset-bottom, 0px))) {
+  #we-ball {
+    right: max(12px, env(safe-area-inset-right, 0px));
+    bottom: max(120px, calc(env(safe-area-inset-bottom, 0px) + 120px));
+  }
+}
+#we-ball:active { transform: scale(.94); }
+#we-ball.we-dragging { opacity: .85; cursor: grabbing !important; transition: none; }
+#we-ball.we-busy { background: linear-gradient(135deg, #ef9f27, #e2683f); }
+#we-ball:hover { box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45); }
+
+/* 键盘聚焦时给个清晰轮廓（Tab 能走到球上，Enter / 空格打开面板） */
+#we-ball:focus-visible {
+  outline: 2px solid #ffffff;
+  outline-offset: 2px;
+}
+
+/* ---------- 推演光环（伪元素承载，球的 DOM 结构不动） ---------- */
+
+#we-ball::before {
+  content: '';
+  position: absolute;
+  left: -5px; top: -5px; right: -5px; bottom: -5px;
+  border-radius: 50%;
+  border: 2px solid transparent;
+  border-top-color: #ffffff;
+  border-right-color: rgba(255, 255, 255, 0.4);
+  opacity: 0;
+  pointer-events: none;
+  animation: we-spin 1s linear infinite;
+}
+#we-ball.we-busy::before { opacity: 1; }
+@keyframes we-spin { to { transform: rotate(360deg); } }
+
+/* ---------- 成功 / 失败角标 ---------- */
+
+#we-ball::after {
+  content: '';
+  position: absolute;
+  right: -3px; top: -3px;
+  width: 18px; height: 18px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+  color: #ffffff;
+  opacity: 0;
+  transform: scale(.5);
+  transition: opacity .18s ease, transform .18s ease;
+  pointer-events: none;
+}
+#we-ball.we-ok::after {
+  content: '✓';
+  background: #2f9e5f;
+  opacity: 1;
+  transform: scale(1);
+}
+#we-ball.we-err::after {
+  content: '✕';
+  background: #d9534f;
+  opacity: 1;
+  transform: scale(1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #we-ball::before { animation: none; }
+  #we-ball::after { transition: none; }
+}
+
+/* ---------- 屏幕顶部状态横幅 ---------- */
+
+#we-top-status {
+  position: fixed;
+  left: 50%;
+  top: 10px;
+  transform: translate(-50%, -16px);
+  z-index: 100004;
+  max-width: min(92vw, 720px);
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: rgba(20, 24, 32, 0.94);
+  color: #eef2f7;
+  font-size: 13px;
+  line-height: 1.5;
+  text-align: center;
+  word-break: break-word;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 6px 22px rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .25s ease, transform .25s ease;
+}
+#we-top-status.we-show { opacity: 1; transform: translate(-50%, 0); }
+#we-top-status.we-err {
+  background: rgba(120, 32, 32, 0.95);
+  border-color: rgba(255, 160, 160, 0.35);
+}
+
+/* ---------- 引擎状态点（面板顶部时间条） ---------- */
+
+.we-dot {
+  display: inline-block;
+  width: 8px; height: 8px;
+  margin-left: 5px;
+  border-radius: 50%;
+  vertical-align: middle;
+  background: #8b93a3;
+  flex: none;
+}
+.we-dot-idle { background: #8b93a3; }
+.we-dot-ok { background: #35b56a; box-shadow: 0 0 0 2px rgba(53, 181, 106, 0.22); }
+.we-dot-err { background: #d9534f; box-shadow: 0 0 0 2px rgba(217, 83, 79, 0.25); }
+.we-dot-busy {
+  background: #e8a33d;
+  box-shadow: 0 0 0 2px rgba(232, 163, 61, 0.25);
+  animation: we-pulse 1.1s ease-in-out infinite;
+}
+@keyframes we-pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
+
+/* ---------- 手机上的遮罩（点一下关闭面板） ---------- */
+
+#we-backdrop {
+  position: fixed;
+  top: 0; left: 0; right: 0; bottom: 0;
+  z-index: 100000;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+/* ---------- 主题变量（默认深色，JS 检测到浅色会加 .we-light） ---------- */
+
+#we-panel,
+#we-confirm {
+  --we-bg: #1b1f27;
+  --we-bg2: #232833;
+  --we-fg: #e9ecf1;
+  --we-sub: #9ba4b3;
+  --we-bd: rgba(255, 255, 255, 0.16);
+  --we-btn-bg: #39414f;
+  --we-btn-fg: #ffffff;
+  --we-btn-bd: #4d5768;
+  --we-input-bg: #12151b;
+}
+
+#we-panel.we-light,
+#we-confirm.we-light {
+  --we-bg: #ffffff;
+  --we-bg2: #f4f6fa;
+  --we-fg: #1b1f27;
+  --we-sub: #5c6675;
+  --we-bd: rgba(0, 0, 0, 0.16);
+  --we-btn-bg: #e9edf4;
+  --we-btn-fg: #1b1f27;
+  --we-btn-bd: #c2cad8;
+  --we-input-bg: #ffffff;
+}
+
+/* ---------- 跟随酒馆主题（v2.3.6）----------
+ * 不是"我们另搞一套配色"，而是从酒馆宿主的 --SmartTheme* 变量派生，
+ * 缺的 token 用 color-mix 从基色算出来。装了任何酒馆主题，面板都跟着走。
+ * 必须写在 .we-light / .we-dark 之后：同优先级（id + class），后写的赢。
+ * 若浏览器不支持 color-mix，这几条声明整体失效 → 自动退回上面的明/暗两套，
+ * 不会出现"颜色算不出来变成透明"的情况。
+ */
+#we-panel.we-st,
+#we-confirm.we-st {
+  --we-bg: var(--SmartThemeBlurTintColor, #1b1f27);
+  --we-bg2: color-mix(in srgb, var(--SmartThemeBlurTintColor, #232833) 88%, var(--SmartThemeBodyColor, #ffffff));
+  --we-fg: var(--SmartThemeBodyColor, #e9ecf1);
+  --we-sub: color-mix(in srgb, var(--SmartThemeBodyColor, #e9ecf1) 62%, var(--SmartThemeBlurTintColor, #1b1f27));
+  --we-bd: var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.18));
+  --we-btn-bg: color-mix(in srgb, var(--SmartThemeBlurTintColor, #39414f) 80%, var(--SmartThemeBodyColor, #ffffff));
+  --we-btn-fg: var(--SmartThemeBodyColor, #ffffff);
+  --we-btn-bd: var(--SmartThemeBorderColor, rgba(255, 255, 255, 0.18));
+  --we-input-bg: var(--SmartThemeChatTintColor, #12151b);
+}
+
+/* ---------- 面板主体 ---------- */
+
+#we-panel {
+  position: fixed;
+  z-index: 100001;
+  /* 底部抽屉式（全尺寸生效，不只手机）：
+     1) 手机浏览器的布局视口可能比 560px 宽（尤其用电脑IP访问时），媒体查询会失效；
+     2) top:50% + translate(-50%,-50%) 在手机地址栏收放时会把面板顶出屏幕上沿。
+     贴底 + left/right:0 + margin:auto 最稳，不用 transform。 */
+  left: 0;
+  right: 0;
+  bottom: 0;
+  top: auto;
+  transform: none;
+  margin: 0 auto;
+  width: min(560px, 100%);
+  max-height: 92vh;
+  max-height: 92dvh;
+  padding-bottom: env(safe-area-inset-bottom, 0px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 14px 14px 0 0;
+  border-bottom: none;
+  overflow: hidden;
+  color: var(--we-fg);
+  background: var(--we-bg);
+  border: 1px solid var(--we-bd);
+  box-shadow: 0 -18px 50px rgba(0, 0, 0, 0.45);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.we-timebar {
+  height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  color: #ffffff;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+  flex: 0 0 auto;
+}
+.we-timebar .we-tb-title { font-weight: 700; font-size: 13px; }
+.we-timebar .we-ver { font-weight: 400; font-size: 11px; opacity: .8; }
+.we-timebar .we-tb-time { font-size: 12px; opacity: .95; }
+.we-timebar .we-close { cursor: pointer; padding: 2px 6px; font-size: 16px; opacity: .85; }
+.we-timebar .we-close:hover { opacity: 1; }
+
+.we-bg-dawn    { background: linear-gradient(90deg, #6a85b6, #f8b195); }
+.we-bg-morning { background: linear-gradient(90deg, #4bb6e0, #7fd8c8); }
+.we-bg-noon    { background: linear-gradient(90deg, #e0a83b, #e8845c); }
+.we-bg-afternoon { background: linear-gradient(90deg, #4f9fe0, #5b7fe0); }
+.we-bg-dusk    { background: linear-gradient(90deg, #e2683f, #e0965c); }
+.we-bg-night   { background: linear-gradient(90deg, #2b5876, #4e4376); }
+.we-bg-midnight{ background: linear-gradient(90deg, #17222b, #2c5364); }
+
+.we-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 8px 0 8px;
+  border-bottom: 1px solid var(--we-bd);
+  flex: 0 0 auto;
+  overflow-x: auto;
+}
+.we-tabs button {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--we-fg);
+  opacity: .62;
+  padding: 6px 10px;
+  cursor: pointer;
+  font-size: 12.5px;
+  white-space: nowrap;
+  position: relative;
+}
+.we-tabs button:hover { opacity: .9; }
+.we-tabs button.we-active { opacity: 1; border-bottom-color: #4f6ef7; font-weight: 600; }
+
+/* 页签红点：有「待审新角色」时亮一个点，不点进去也知道有人在等你审批 */
+.we-tab-dot {
+  display: none;
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #e8a33d;
+  box-shadow: 0 0 0 1.5px var(--we-bg);
+  pointer-events: none;
+}
+.we-tab-dot.we-on { display: block; }
+
+/* 窄屏：8 个页签在手机上塞不下一行，换两行比横向滚动好找 */
+@media (max-width: 560px) {
+  .we-tabs {
+    flex-wrap: wrap;
+    overflow-x: visible;
+    row-gap: 2px;
+  }
+  .we-tabs button {
+    padding: 5px 8px;
+    font-size: 12px;
+  }
+}
+
+.we-body {
+  padding: 10px 12px;
+  overflow-y: auto;
+  flex: 1 1 auto;
+  /* 关键：没有这条，flex 子项的最小高度=内容高度，内容一多面板就会被撑破/顶出屏幕 */
+  min-height: 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---------- 通用控件（显式配色，避免白底白字） ---------- */
+
+#we-panel button,
+#we-confirm button {
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-family: inherit;
+  background: var(--we-btn-bg);
+  color: var(--we-btn-fg);
+  border: 1px solid var(--we-btn-bd);
+}
+#we-panel button:hover,
+#we-confirm button:hover { filter: brightness(1.14); }
+#we-panel button.we-primary,
+#we-confirm button.we-ok {
+  background: #3b5bdb;
+  border-color: #2f49b0;
+  color: #ffffff;
+}
+
+#we-panel input[type=text],
+#we-panel input[type=password],
+#we-panel input[type=number],
+#we-panel select,
+#we-panel textarea {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 5px 7px;
+  border-radius: 7px;
+  border: 1px solid var(--we-bd);
+  background: var(--we-input-bg);
+  color: var(--we-fg);
+  font-size: 12.5px;
+  font-family: inherit;
+}
+#we-panel select { cursor: pointer; }
+#we-panel textarea { min-height: 90px; resize: vertical; line-height: 1.45; }
+#we-panel input[type=checkbox] { width: auto; accent-color: #4f6ef7; }
+#we-panel input::placeholder, #we-panel textarea::placeholder { color: var(--we-sub); }
+
+/* ---------- 内容块 ---------- */
+
+.we-group { margin-bottom: 12px; }
+.we-group-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 700;
+  font-size: 12.5px;
+  margin-bottom: 6px;
+  color: var(--we-fg);
+}
+.we-group-title .we-count { color: var(--we-sub); font-weight: 400; }
+
+.we-card {
+  border: 1px solid var(--we-bd);
+  border-radius: 9px;
+  padding: 8px 9px;
+  margin-bottom: 6px;
+  background: var(--we-bg2);
+}
+.we-card.we-child { margin-left: 14px; }
+.we-card.we-hidden { opacity: .5; }
+
+.we-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.we-name { font-weight: 700; }
+.we-badge {
+  font-size: 10.5px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  color: #ffffff;
+  white-space: nowrap;
+}
+.we-b-red { background: #d9534f; }
+.we-b-interaction { background: #3f7fd8; }
+.we-b-cooldown { background: #6f7683; }
+.we-b-unseen { background: #565d6b; }
+.we-b-sed { background: #c2185b; }
+.we-text { margin-top: 3px; white-space: pre-wrap; word-break: break-word; }
+.we-sub { margin-top: 3px; font-size: 11.5px; color: var(--we-sub); }
+.we-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--we-bd);
+}
+/* v2.3.23：角色行竖向堆叠 —— 名字 / 状态（时间·地点·在做什么）/ 心情目标 各占一行，不再挤在一条线上 */
+.we-line.we-stack { display: block; }
+.we-hint { font-size: 11.5px; color: var(--we-sub); }
+
+.we-eye {
+  cursor: pointer;
+  color: var(--we-fg);
+  opacity: .55;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 2px;
+}
+.we-eye:hover { opacity: 1; }
+.we-eye.we-off { opacity: .9; color: #e0965c; }
+
+.we-fold summary { cursor: pointer; font-weight: 700; font-size: 12.5px; padding: 3px 0; }
+.we-fold[open] summary { margin-bottom: 4px; }
+
+/* 子分支折叠：默认全部收起，只露一行"子分支（N）名字、名字" */
+.we-childfold { margin: 4px 0 0 14px; }
+.we-childfold > summary {
+  font-weight: 600;
+  font-size: 12px;
+  color: var(--we-sub);
+  padding: 2px 0;
+  display: flex;
+  gap: 6px;
+  align-items: baseline;
+}
+.we-childfold > summary::marker { color: var(--we-sub); }
+.we-childfold[open] > summary { color: var(--we-fg); }
+.we-childfold-names {
+  font-weight: 400;
+  opacity: .75;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+.we-childfold-body { padding-left: 2px; }
+.we-childfold .we-childfold { margin-left: 12px; }
+
+#we-panel .we-footer {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  border-top: 1px solid var(--we-bd);
+  flex: 0 0 auto;
+}
+#we-panel .we-footer button { flex: 1 1 auto; min-width: 84px; }
+
+.we-form { display: grid; gap: 8px; }
+.we-field { display: grid; gap: 3px; }
+.we-field label { font-size: 11.5px; color: var(--we-sub); }
+.we-inline { display: flex; align-items: center; gap: 6px; font-size: 12.5px; }
+.we-grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.we-sect-title {
+  font-weight: 700;
+  margin: 10px 0 4px;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--we-bd);
+  padding-bottom: 3px;
+}
+
+.we-log { border: 1px solid var(--we-bd); border-radius: 8px; padding: 6px; margin-bottom: 8px; }
+.we-log pre {
+  max-height: 160px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  font-size: 11.5px;
+  margin: 4px 0 0;
+  background: var(--we-bg2);
+  color: var(--we-fg);
+  padding: 5px;
+  border-radius: 6px;
+}
+.we-log-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: var(--we-sub);
+}
+
+.we-ev { padding: 3px 0; border-bottom: 1px dashed var(--we-bd); font-size: 12px; }
+.we-ev .we-ev-type {
+  font-size: 10.5px;
+  padding: 0 5px;
+  border-radius: 4px;
+  background: var(--we-bg2);
+  border: 1px solid var(--we-bd);
+  margin-right: 5px;
+}
+
+/* 单条删除小按钮（大事记 / 日志页，v2.3.11） */
+.we-mini-del {
+  float: right;
+  margin-left: 6px;
+  padding: 0 7px;
+  font-size: 11px;
+  line-height: 18px;
+  border-radius: 5px;
+  border: 1px solid var(--we-bd);
+  background: var(--we-bg2);
+  color: var(--we-sub);
+  cursor: pointer;
+}
+.we-mini-del:hover { color: #d9534f; border-color: #d9534f; }
+
+/* ---------- 待建档平铺列表 ---------- */
+
+.we-flatrow {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  padding: 3px 0;
+  border-bottom: 1px dashed var(--we-bd);
+  font-size: 12.5px;
+}
+.we-flatrow .we-sub { margin-top: 0; flex: 1 1 100%; }
+
+/* ---------- 工作小结 ---------- */
+
+.we-worklog {
+  border: 1px solid var(--we-bd);
+  border-radius: 9px;
+  padding: 7px 9px;
+  margin-bottom: 6px;
+  background: var(--we-bg2);
+}
+.we-wl-head { display: flex; gap: 6px; align-items: flex-start; flex-wrap: wrap; }
+.we-wl-n { font-weight: 700; color: var(--we-sub); font-size: 11.5px; padding-top: 1px; }
+.we-wl-text { flex: 1 1 180px; word-break: break-word; }
+
+/* ---------- 整理草稿 ---------- */
+
+.we-draft {
+  border: 1px solid var(--we-bd);
+  border-radius: 9px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--we-bg2);
+}
+.we-draft summary { font-size: 12px; }
+
+/* ---------- 提示词折叠（默认收起） ---------- */
+
+.we-promptfold {
+  border: 1px solid var(--we-bd);
+  border-radius: 9px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  background: var(--we-bg2);
+}
+.we-promptfold > summary {
+  font-size: 13px;
+  font-weight: 700;
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.we-promptfold textarea { width: 100%; }
+
+/* ---------- 日志页（折叠 + 筛选） ---------- */
+
+.we-logfilter button.we-active {
+  background: #3b5bdb;
+  border-color: #2f49b0;
+  color: #ffffff;
+}
+.we-logfold {
+  border: 1px solid var(--we-bd);
+  border-radius: 9px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+  background: var(--we-bg2);
+}
+.we-logfold > summary { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.we-logpre {
+  max-height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-size: 11.5px;
+  background: var(--we-bg);
+  color: var(--we-fg);
+  padding: 6px;
+  border-radius: 6px;
+  margin: 4px 0 8px;
+}
+
+/* ---------- 手机上的面板：整块可滚动，表头/页签吸顶 ----------
+   几何由 JS 写成 inline 像素（top/height），这里只管"滚起来"和吸顶，
+   这样就算视口算得不准、面板底部被切掉一点，也一定能把底部按钮滚出来。 */
+
+#we-panel.we-mobile {
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+#we-panel.we-mobile .we-body {
+  overflow: visible;
+  flex: 0 0 auto;
+}
+#we-panel.we-mobile .we-timebar {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+#we-panel.we-mobile .we-tabs {
+  position: sticky;
+  top: 46px;
+  z-index: 2;
+  background: var(--we-bg);
+}
+#we-panel.we-mobile .we-footer { border-bottom: 1px solid var(--we-bd); }
+
+/* 诊断信息框 */
+.we-diagbox {
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--we-bd);
+  border-radius: 8px;
+  background: var(--we-input-bg);
+  color: var(--we-fg);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* ---------- 底部确认条 ---------- */
+
+#we-confirm {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 100002;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 10px;
+  background: var(--we-bg);
+  color: var(--we-fg);
+  border: 1px solid var(--we-bd);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .4);
+  font-size: 12.5px;
+  max-width: 92vw;
+}
+
+@media (max-width: 560px) {
+  /* 手机：改成"底部抽屉"，不再用 居中+transform（部分手机浏览器算不准，会把面板顶出屏幕） */
+  #we-panel {
+    top: auto;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    transform: none;
+    width: 100vw;
+    max-width: 100vw;
+    max-height: 88vh;
+    max-height: 88dvh;
+    border-radius: 14px 14px 0 0;
+    box-shadow: 0 -12px 40px rgba(0, 0, 0, 0.5);
+  }
+  #we-panel .we-footer button { min-width: 72px; font-size: 12.5px; }
+  .we-grid2 { grid-template-columns: 1fr; }
+  /* 手机：球大一点、位置抬高一点，避开底部输入栏和悬浮按钮 */
+  #we-ball {
+    width: 54px;
+    height: 54px;
+    font-size: 13px;
+    bottom: 96px;
+    right: 10px;
+  }
+  @supports (bottom: max(1px, env(safe-area-inset-bottom, 0px))) {
+    #we-ball {
+      bottom: max(96px, calc(env(safe-area-inset-bottom, 0px) + 96px));
+      right: max(10px, env(safe-area-inset-right, 0px));
+    }
+  }
+}
+
+/* 横屏 / 很矮的屏幕：球别把内容挡住 */
+@media (max-height: 460px) {
+  #we-ball { bottom: 56px; }
+}
+
+/* ---------- v2.3.19：手机点击可靠性 ---------- */
+/* 没有 touch-action 时，移动浏览器会为"双击缩放"保留约 300ms 等待，
+   点击要等这 300ms 才派发 —— 这正好是重渲染最容易把按钮换掉的窗口，
+   体感就是"按钮按了没反应"。manipulation 关掉双击缩放，点击立刻生效。 */
+#we-panel button,
+#we-panel .we-eye,
+#we-panel [data-act] {
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.12);
+}
+#we-panel button { cursor: pointer; }
